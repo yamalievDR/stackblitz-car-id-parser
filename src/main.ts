@@ -6,11 +6,13 @@ import { VehicleNumberInputComponent } from './vehicle-number-input';
   selector: 'app-root',
   imports: [VehicleNumberInputComponent],
   template: `
-   <vehicle-number-input 
-  (typeDetected)="onVehicleNumberDetected($event)">
-</vehicle-number-input>
+   <vehicle-number-input (typeDetected)="onVehicleNumberDetected($event)"/>
   `,
 })
-export class App {}
+export class App {
+  onVehicleNumberDetected(event: {type: 'vin' | 'license' | 'body', value: string}) {
+    console.log(`Detected ${event.type}: ${event.value}`);
+  }
+}
 
 bootstrapApplication(App);
