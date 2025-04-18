@@ -1,5 +1,4 @@
-import { Component, EventEmitter, Output, Pipe, PipeTransform } from '@angular/core';
-import { IMaskDirective, IMaskModule } from 'angular-imask';
+import { Component, ElementRef, EventEmitter, Output, Pipe, PipeTransform, ViewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 
@@ -29,9 +28,11 @@ export class VehicleTypePipe implements PipeTransform {
     template: `
         <div class="vehicle-input-container">
             <input
-                    [(ngModel)]="vehicleNumber"
+                    #inputRef
+                    [(ngModel)]="displayValue"
                     (ngModelChange)="onInputChange($event)"
-                    (blur)="validateInput()"
+                    (keydown)="saveCursorPosition()"
+                    (click)="saveCursorPosition()"
                     placeholder="Введите VIN, госномер или номер кузова"
                     type="text"
                     [class.error]="showError"
@@ -77,11 +78,15 @@ export class VehicleTypePipe implements PipeTransform {
     `]
 })
 export class VehicleNumberInputComponent {
-    vehicleNumber = '';
+    @ViewChild('inputRef') inputRef!: ElementRef<HTMLInputElement>;
+
+    private _vehicleNumber = '';
+    displayValue = '';
     detectedType: 'vin' | 'license' | 'body' | null = null;
     isValidVin = true;
     showError = false;
     errorMessage = '';
+    cursorPosition = 0;
 
     @Output() typeDetected = new EventEmitter<{
         type: 'vin' | 'license' | 'body';
@@ -89,28 +94,65 @@ export class VehicleNumberInputComponent {
         isValid: boolean;
     }>();
 
-    onInputChange(value: string) {
-        this.vehicleNumber = value.toUpperCase();
-        this.showError = false;
-        this.detectNumberType(this.vehicleNumber);
+    get vehicleNumber(): string {
+        return this._vehicleNumber;
     }
 
-    validateInput() {
+    set vehicleNumber(value: string) {
+        this._vehicleNumber = value.toUpperCase();
+        this.displayValue = this._vehicleNumber;
+    }
+
+    saveCursorPosition() {
+        this.cursorPosition = this.inputRef.nativeElement.selectionStart || 0;
+    }
+
+    restoreCursorPosition() {
+        setTimeout(() => {
+            this.inputRef.nativeElement.setSelectionRange(this.cursorPosition, this.cursorPosition);
+        });
+    }
+
+    onInputChange(value: string) {
+        this.saveCursorPosition();
+
+        // Сохраняем предыдущее значение
+        const prevValue = this.vehicleNumber;
+        this.vehicleNumber = value;
+
+        // Если значение не изменилось (например, при форматировании)
+        if (prevValue === this.vehicleNumber) {
+            this.restoreCursorPosition();
+            return;
+        }
+
+        // Мгновенная валидация
+        this.validateInput(true);
+        this.restoreCursorPosition();
+    }
+
+    validateInput(instantValidation = false) {
         if (!this.vehicleNumber) {
             this.showError = false;
+            this.detectedType = null;
             return;
         }
 
         this.detectNumberType(this.vehicleNumber, true);
+
+        // Для мгновенной валидации не показываем ошибку, только подсветку
+        if (instantValidation) {
+            this.showError = false;
+        }
     }
 
-    private detectNumberType(value: string, fullValidation = false) {
-        // Сначала проверяем VIN (самый строгий формат)
+    private detectNumberType(value: string, fullValidation: boolean) {
+        // Проверка VIN
         if (this.isPotentialVIN(value)) {
             this.detectedType = 'vin';
             this.isValidVin = fullValidation ? this.validateVinChecksum(value) : true;
 
-            if (fullValidation && !this.isValidVin) {
+            if (!this.isValidVin && !fullValidation) {
                 this.showError = true;
                 this.errorMessage = 'Некорректный VIN (проверьте контрольную сумму)';
             }
@@ -119,7 +161,7 @@ export class VehicleNumberInputComponent {
             return;
         }
 
-        // Затем проверяем госномер
+        // Проверка госномера
         if (this.isLicensePlate(value)) {
             this.detectedType = 'license';
             this.isValidVin = true;
@@ -127,7 +169,7 @@ export class VehicleNumberInputComponent {
             return;
         }
 
-        // Затем номер кузова
+        // Проверка номера кузова
         if (this.isBodyNumber(value)) {
             this.detectedType = 'body';
             this.isValidVin = true;
